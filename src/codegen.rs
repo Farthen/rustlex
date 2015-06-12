@@ -327,6 +327,8 @@ pub fn user_lexer_impl(cx: &mut ExtCtxt, sp: Span, lex:&Lexer) -> Vec<P<ast::Ite
             type Item = $tokens;
 
             fn next(&mut self) -> Option<$tokens> {
+                let mut unicode_skip = 0;
+
                 loop {
                     self._input.tok = self._input.pos;
                     self._input.advance = self._input.pos;
@@ -348,12 +350,30 @@ pub fn user_lexer_impl(cx: &mut ExtCtxt, sp: Span, lex:&Lexer) -> Vec<P<ast::Ite
                         };
 
                         // count the lines
-                        if i == b'\n' {
-                            self._input.pos_location.line += 1;
-                            self._input.pos_location.character = 0;
-                        }
+                        if unicode_skip == 0 {
+                            if i == b'\n' {
+                                self._input.pos_location.line += 1;
+                                self._input.pos_location.character = 1;
+                            } else {
+                                self._input.pos_location.character += 1;
 
-                        self._input.pos_location.character += 1;
+                                if i < 0xC2 {
+                                    // nothing to do, this is a single-byte char
+                                } else if i < 0xE0 {
+                                    // UTF-8 2-byte pair
+                                    unicode_skip = 1;
+                                } else if i < 0xF0 {
+                                    // UTF-8 3-byte pair
+                                    unicode_skip = 2;
+                                } else {
+                                    // UTF-8 4-byte pair
+                                    unicode_skip = 3;
+                                }
+                            }
+                        } else {
+                            unicode_skip -= 1;
+
+                        }
 
                         let new_st:usize = self.follow(current_st, i as usize);
                         let action_id:usize = self.accepting(new_st);
