@@ -285,6 +285,12 @@ pub fn user_lexer_impl(cx: &mut ExtCtxt, sp: Span, lex:&Lexer) -> Vec<P<ast::Ite
 
             #[allow(dead_code)]
             #[allow(unused_mut)]
+            fn yylloc(&mut self) -> (u64, u64) {
+                return (self._input.location.line, self._input.location.character)
+            }
+
+            #[allow(dead_code)]
+            #[allow(unused_mut)]
             fn yystr(&mut self) -> String {
                 let ::rustlex::rt::RustLexPos { buf, off } = self._input.tok;
                 let ::rustlex::rt::RustLexPos { buf: nbuf, off: noff } = self._input.pos;
@@ -324,6 +330,12 @@ pub fn user_lexer_impl(cx: &mut ExtCtxt, sp: Span, lex:&Lexer) -> Vec<P<ast::Ite
                 loop {
                     self._input.tok = self._input.pos;
                     self._input.advance = self._input.pos;
+
+                    self._input.location.line = self._input.advance_location.line;
+                    self._input.location.character = self._input.advance_location.character;
+                    self._input.pos_location.line = self._input.advance_location.line;
+                    self._input.pos_location.character = self._input.advance_location.character;
+
                     let mut last_matching_action = 0;
                     let mut current_st = self._state;
 
@@ -335,11 +347,24 @@ pub fn user_lexer_impl(cx: &mut ExtCtxt, sp: Span, lex:&Lexer) -> Vec<P<ast::Ite
                             _ => break
                         };
 
+                        // count the lines
+                        if i == b'\n' {
+                            self._input.pos_location.line += 1;
+                            self._input.pos_location.character = 0;
+                        }
+
+                        self._input.pos_location.character += 1;
+
                         let new_st:usize = self.follow(current_st, i as usize);
                         let action_id:usize = self.accepting(new_st);
 
                         if action_id != 0 {
+                            // this state is accepting
                             self._input.advance = self._input.pos;
+
+                            // save the current line/char
+                            self._input.advance_location.line = self._input.pos_location.line;
+                            self._input.advance_location.character = self._input.pos_location.character;
 
                             // final state
                             last_matching_action = action_id;
