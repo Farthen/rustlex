@@ -171,6 +171,18 @@ pub fn actions_match(lex:&Lexer, cx: &mut ExtCtxt, sp: Span) -> P<ast::Expr> {
         lexer._input.pos.off += 1;
         let b: &u8 = lexer._input.inp[
             lexer._input.tok.buf].get(lexer._input.tok.off);
+
+        if *b < 0xC2 {
+            if *b == b'\n' {
+                lexer._input.pos_location.line += 1;
+                lexer._input.pos_location.character = 1;
+            } else {
+                lexer._input.pos_location.character += 1;
+            }
+
+            lexer._input.advance_location = lexer._input.pos_location;
+        }
+
         warn!("[RUSTLEX] Encountered unkown character '{}' at {}:{}",
             *b as char,
             lexer._input.location.line,
@@ -336,10 +348,8 @@ pub fn user_lexer_impl(cx: &mut ExtCtxt, sp: Span, lex:&Lexer) -> Vec<P<ast::Ite
                     self._input.tok = self._input.pos;
                     self._input.advance = self._input.pos;
 
-                    self._input.location.line = self._input.advance_location.line;
-                    self._input.location.character = self._input.advance_location.character;
-                    self._input.pos_location.line = self._input.advance_location.line;
-                    self._input.pos_location.character = self._input.advance_location.character;
+                    self._input.location = self._input.advance_location;
+                    self._input.pos_location = self._input.advance_location;
 
                     let mut last_matching_action = 0;
                     let mut current_st = self._state;
@@ -385,8 +395,7 @@ pub fn user_lexer_impl(cx: &mut ExtCtxt, sp: Span, lex:&Lexer) -> Vec<P<ast::Ite
                             self._input.advance = self._input.pos;
 
                             // save the current line/char
-                            self._input.advance_location.line = self._input.pos_location.line;
-                            self._input.advance_location.character = self._input.pos_location.character;
+                            self._input.advance_location = self._input.pos_location;
 
                             // final state
                             last_matching_action = action_id;
@@ -397,6 +406,9 @@ pub fn user_lexer_impl(cx: &mut ExtCtxt, sp: Span, lex:&Lexer) -> Vec<P<ast::Ite
 
                     // go back to last matching state in the input
                     self._input.pos = self._input.advance;
+
+                    // set the location accordingly
+                    self._input.pos_location = self._input.advance_location;
 
                     // execute action corresponding to found state
                     let action_result = $actions_match(self) ;
