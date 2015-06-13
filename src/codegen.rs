@@ -183,7 +183,7 @@ pub fn actions_match(lex:&Lexer, cx: &mut ExtCtxt, sp: Span) -> P<ast::Expr> {
             lexer._input.advance_location = lexer._input.pos_location;
         }
 
-        warn!("[RUSTLEX] Encountered unkown character '{}' at {}:{}",
+        warn!("Encountered illegal character '{}' at {}:{}",
             *b as char,
             lexer._input.location.line,
             lexer._input.location.character);

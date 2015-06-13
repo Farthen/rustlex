@@ -1,4 +1,4 @@
-#![feature(rustc_private,plugin)]
+#![feature(plugin)]
 #![plugin(rustlex)]
 
 #[allow(plugin_as_library)]
