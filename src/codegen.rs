@@ -166,12 +166,18 @@ pub fn actions_match(lex:&Lexer, cx: &mut ExtCtxt, sp: Span) -> P<ast::Expr> {
     }
 
     let def_act = quote_expr!(&*cx, Box::new(|lexer:&mut $ident<R>| -> Option<$tokens> {
-        // default action is printing on stdout
+        // default action is printing on sterr
+        use std::io;
+        use std::io::Write;
         lexer._input.pos = lexer._input.tok;
         lexer._input.pos.off += 1;
         let b: &u8 = lexer._input.inp[
             lexer._input.tok.buf].get(lexer._input.tok.off);
-        print!("{}", *b as char);
+        let _ = writeln!(&mut io::stderr(),
+            "[RUSTLEX] Encountered unkown character '{}' at {}:{}",
+            *b as char,
+            lexer._input.location.line,
+            lexer._input.location.character);
         None
     }) as Box<$action_type>);
 
@@ -372,7 +378,6 @@ pub fn user_lexer_impl(cx: &mut ExtCtxt, sp: Span, lex:&Lexer) -> Vec<P<ast::Ite
                             }
                         } else {
                             unicode_skip -= 1;
-
                         }
 
                         let new_st:usize = self.follow(current_st, i as usize);
