@@ -150,15 +150,15 @@ impl<R: ::std::io::Read> RustLexLexer<R> {
             },
             location: RustLexInputLocation {
                 line: 1,
-                character: 0
+                character: 1
             },
             pos_location: RustLexInputLocation {
                 line: 1,
-                character: 0
+                character: 1
             },
             advance_location: RustLexInputLocation {
                 line: 1,
-                character: 0
+                character: 1
             },
 
         };
