@@ -286,6 +286,12 @@ pub fn user_lexer_impl(cx: &mut ExtCtxt, sp: Span, lex:&Lexer) -> Vec<P<ast::Ite
             pub fn new(reader:R) -> $ident<R> {
                 $init_expr
             }
+            
+            #[allow(dead_code)]
+            #[allow(unused_mut)]
+            fn yylloc(&mut self) -> (u64, u64) {
+                return (self._input.location.line, self._input.location.character)
+            }
 
             #[allow(dead_code)]
             #[allow(unused_mut)]
