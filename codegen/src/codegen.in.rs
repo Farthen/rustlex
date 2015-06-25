@@ -290,7 +290,7 @@ pub fn user_lexer_impl(cx: &mut ExtCtxt, sp: Span, lex:&Lexer) -> Vec<P<ast::Ite
             #[allow(dead_code)]
             #[allow(unused_mut)]
             fn yylloc(&mut self) -> (u64, u64) {
-                return (self._input.location.line, self._input.location.character)
+                (0, 0)
             }
 
             #[allow(dead_code)]
