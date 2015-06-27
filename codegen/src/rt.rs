@@ -36,6 +36,12 @@ impl RustLexBuffer {
 }
 
 #[derive(Copy,Clone)]
+pub struct RustLexInputLocation {
+    pub line: u64,
+    pub character: u64
+}
+
+#[derive(Copy,Clone)]
 pub struct RustLexPos {
     pub buf: usize,
     pub off: usize
@@ -53,7 +59,10 @@ pub struct RustLexLexer<R : Read> {
     pub inp: Vec<RustLexBuffer>,
     pub advance: RustLexPos,
     pub pos: RustLexPos,
-    pub tok: RustLexPos
+    pub tok: RustLexPos,
+    pub location: RustLexInputLocation,
+    pub pos_location: RustLexInputLocation,
+    pub advance_location: RustLexInputLocation
 }
 
 fn vec_resize<T: Clone>(vec: &mut Vec<T>, new_len: usize, value: T) {
@@ -147,7 +156,19 @@ impl<R: ::std::io::Read> RustLexLexer<R> {
             tok: RustLexPos {
                 off: 0,
                 buf: 0
-            }
+            },
+            location: RustLexInputLocation {
+                line: 1,
+                character: 1
+            },
+            pos_location: RustLexInputLocation {
+                line: 1,
+                character: 1
+            },
+            advance_location: RustLexInputLocation {
+                line: 1,
+                character: 1
+            },
         };
         lex.fill_buf();
         lex

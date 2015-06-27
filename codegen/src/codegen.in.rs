@@ -175,8 +175,21 @@ pub fn actions_match(lex:&Lexer, cx: &mut ExtCtxt, sp: Span) -> P<ast::Expr> {
         lexer._input.pos.off += 1;
         let b: &u8 = lexer._input.inp[
             lexer._input.tok.buf].get(lexer._input.tok.off);
-        print!("{}", *b as char);
-        None
+        if *b < 0xC2 {
+            if *b == b'\n' {
+                lexer._input.pos_location.line += 1;
+                lexer._input.pos_location.character = 1;
+            } else {
+                lexer._input.pos_location.character += 1;
+            }
+
+            lexer._input.advance_location = lexer._input.pos_location;
+        }
+        error!("Encountered illegal character '{}' at {}:{}",
+            *b as char,
+            lexer._input.location.line,
+            lexer._input.location.character);
+        panic!("ERROR in rustlex. Illegal character.");
     }) as Box<$action_type>);
 
     let def_pat = cx.pat_wild(sp);
@@ -290,7 +303,7 @@ pub fn user_lexer_impl(cx: &mut ExtCtxt, sp: Span, lex:&Lexer) -> Vec<P<ast::Ite
             #[allow(dead_code)]
             #[allow(unused_mut)]
             fn yylloc(&mut self) -> (u64, u64) {
-                (0, 0)
+                return (self._input.location.line, self._input.location.character)
             }
 
             #[allow(dead_code)]
@@ -331,9 +344,15 @@ pub fn user_lexer_impl(cx: &mut ExtCtxt, sp: Span, lex:&Lexer) -> Vec<P<ast::Ite
             type Item = $tokens;
 
             fn next(&mut self) -> Option<$tokens> {
+                let mut unicode_skip = 0;
+
                 loop {
                     self._input.tok = self._input.pos;
                     self._input.advance = self._input.pos;
+
+                    self._input.location = self._input.advance_location;
+                    self._input.pos_location = self._input.advance_location;
+
                     let mut last_matching_action = 0;
                     let mut current_st = self._state;
 
@@ -345,11 +364,40 @@ pub fn user_lexer_impl(cx: &mut ExtCtxt, sp: Span, lex:&Lexer) -> Vec<P<ast::Ite
                             _ => break
                         };
 
+                        // count the lines
+                        if unicode_skip == 0 {
+                            if i == b'\n' {
+                                self._input.pos_location.line += 1;
+                                self._input.pos_location.character = 1;
+                            } else {
+                                self._input.pos_location.character += 1;
+
+                                if i < 0xC2 {
+                                    // nothing to do, this is a single-byte char
+                                } else if i < 0xE0 {
+                                    // UTF-8 2-byte pair
+                                    unicode_skip = 1;
+                                } else if i < 0xF0 {
+                                    // UTF-8 3-byte pair
+                                    unicode_skip = 2;
+                                } else {
+                                    // UTF-8 4-byte pair
+                                    unicode_skip = 3;
+                                }
+                            }
+                        } else {
+                            unicode_skip -= 1;
+                        }
+
                         let new_st:usize = self.follow(current_st, i as usize);
                         let action_id:usize = self.accepting(new_st);
 
                         if action_id != 0 {
+                            // this state is accepting
                             self._input.advance = self._input.pos;
+
+                            // save the current line/char
+                            self._input.advance_location = self._input.pos_location;
 
                             // final state
                             last_matching_action = action_id;
@@ -360,6 +408,9 @@ pub fn user_lexer_impl(cx: &mut ExtCtxt, sp: Span, lex:&Lexer) -> Vec<P<ast::Ite
 
                     // go back to last matching state in the input
                     self._input.pos = self._input.advance;
+
+                    // set the location accordingly
+                    self._input.pos_location = self._input.advance_location;
 
                     // execute action corresponding to found state
                     let action_result = $actions_match(self) ;
