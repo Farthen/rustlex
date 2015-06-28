@@ -330,19 +330,47 @@ fn get_definitions(parser: &mut Parser)
     Ok(ret)
 }
 
+// parses an include rule
+fn get_include(parser: &mut Parser, conditions: &Vec<Condition>, cond_names: &HashMap<Name, usize>)
+        -> Result<Vec<Rule>,FatalError> {
+    if try!(parser.eat(&token::Colon)) {
+        // this condition is inherited
+        if let token::Ident(inherit_id, _) = try!(parser.bump_and_get()) {
+            // now we have the identifier for the inherited patterns
+            // this means there has to be a condition that we already
+            // saw that has this name.
+            if let Some(i) = cond_names.get(&inherit_id.name).cloned() {
+                return Ok(conditions[i].rules.clone());
+            } else {
+                return Err(parser.unexpected())
+            }
+        } else {
+            return Err(parser.unexpected())
+        }
+    }
+    Ok(Vec::new())
+}
+
 // parses the contents of a "condition" body, i.e. simply a
 // list of rules of the form regex => action
 // stops as soon as we encounter a closing brace } which
 // indicates the end of the condition body
-fn get_condition(parser: &mut Parser, env: &Env)
+fn get_condition(parser: &mut Parser, env: &Env, conditions: &Vec<Condition>, cond_names: &HashMap<Name, usize>)
         -> Result<Vec<Rule>,FatalError> {
     let mut ret = Vec::new();
     while !try!(parser.eat(&token::CloseDelim(token::Brace))) {
-        let pattern = try!(get_regex(parser, &token::FatArrow, env));
-        let action = parser.parse_expr();
-        // optionnal comma for disambiguation
+        let include_rules = try!(get_include(parser, conditions, cond_names));
+
+        if include_rules.len() == 0 {
+            let pattern = try!(get_regex(parser, &token::FatArrow, env));
+            let action = parser.parse_expr();
+            ret.push(Rule { pattern:pattern, action:action });
+        }
+
+        ret.extend(include_rules);
+
+        // optional comma for disambiguation
         try!(parser.eat(&token::Comma));
-        ret.push(Rule { pattern:pattern, action:action });
     }
     Ok(ret)
 }
@@ -385,7 +413,7 @@ fn get_conditions(parser: &mut Parser, env: &Env)
                     try!(parser.bump());
 
                     // parse the condition body
-                    let rules = try!(get_condition(parser, env));
+                    let rules = try!(get_condition(parser, env, &ret, &cond_names));
 
                     // have we seen this condition before ?
                     match cond_names.get(&id.name).cloned() {
