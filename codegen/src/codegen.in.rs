@@ -364,14 +364,22 @@ pub fn user_lexer_impl(cx: &mut ExtCtxt, sp: Span, lex:&Lexer) -> Vec<P<ast::Ite
                             _ => break
                         };
 
-                        // count the lines
+                        let mut new_st: usize = current_st;
+                        let mut action_id: usize = 0;
+
                         if unicode_skip == 0 {
+                            // we can only match the first char of a unicode combined char
+                            new_st = self.follow(current_st, i as usize);
+                            action_id = self.accepting(new_st);
+
+                            // count the lines
                             if i == b'\n' {
                                 self._input.pos_location.line += 1;
                                 self._input.pos_location.character = 1;
                             } else {
                                 self._input.pos_location.character += 1;
 
+                                // check if this is a unicode combined char
                                 if i < 0xC2 {
                                     // nothing to do, this is a single-byte char
                                 } else if i < 0xE0 {
@@ -389,11 +397,17 @@ pub fn user_lexer_impl(cx: &mut ExtCtxt, sp: Span, lex:&Lexer) -> Vec<P<ast::Ite
                             unicode_skip -= 1;
                         }
 
-                        let new_st:usize = self.follow(current_st, i as usize);
-                        let action_id:usize = self.accepting(new_st);
-
                         if action_id != 0 {
                             // this state is accepting
+                            // if this was the first byte of a unicode combined
+                            // char we need to include the rest of the
+                            // character as well to prevent decoding errors
+                            while unicode_skip > 0 {
+                                self._input.getchar();
+                                unicode_skip -= 1;
+                            }
+
+                            // advance the buffer
                             self._input.advance = self._input.pos;
 
                             // save the current line/char
