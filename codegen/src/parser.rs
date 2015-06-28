@@ -3,6 +3,7 @@
 // uses libsyntax to parse what Rustc gives us
 
 use std::collections::hash_map::HashMap;
+use std::clone::Clone;
 use lexer::Condition;
 use lexer::LexerDef;
 use lexer::Rule;
@@ -378,14 +379,36 @@ fn get_conditions(parser: &mut Parser, env: &Env)
                 // by an opening brace.
                 // if we see an opening brace '{' here then it's a
                 // condition whose name is the id we just parsed
-                if parser.look_ahead(1, |tok| tok == &token::OpenDelim(token::Brace)) {
+                if parser.look_ahead(1, |tok| tok == &token::OpenDelim(token::Brace)) ||
+                   (parser.look_ahead(1, |tok| tok == &token::Colon) &&
+                    parser.look_ahead(3, |tok| tok == &token::OpenDelim(token::Brace))) {
                     // ok it's a condition
-                    // bump 2 times: the identifier and the lbrace
+                    // bump the identifier
                     try!(parser.bump());
+
+                    let mut rules: Vec<Rule> = Vec::new();
+
+                    // see if it is an inherited condition
+                    // eats the brace otherwise
+                    if try!(parser.eat(&token::Colon)) {
+                        // this condition is inherited
+                        if let token::Ident(inherit_id, _) = try!(parser.bump_and_get()) {
+                            // now we have the identifier for the inherited patterns
+                            // this means there has to be a condition that we already
+                            // saw that has this name.
+                            if let Some(i) = cond_names.get(&inherit_id.name).cloned() {
+                                rules.extend(ret[i].rules.clone().into_iter());
+                            }
+                        } else {
+                            return Err(parser.unexpected())
+                        }
+                    }
+
+                    // eat the brace
                     try!(parser.bump());
 
                     // parse the condition body
-                    let rules = try!(get_condition(parser, env));
+                    rules.extend(try!(get_condition(parser, env)));
 
                     // have we seen this condition before ?
                     match cond_names.get(&id.name).cloned() {

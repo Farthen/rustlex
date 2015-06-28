@@ -15,6 +15,7 @@ use syntax::ptr::P;
 // to a Rust code snippet
 // unfortunately we have to use borrowed pointers since
 // this is what libsyntax gives usn
+#[derive(Clone)]
 pub struct Rule {
     pub pattern: Box<Regex>,
     pub action: P<Expr>
