@@ -170,26 +170,42 @@ pub fn actions_match(lex:&Lexer, cx: &mut ExtCtxt, sp: Span) -> P<ast::Expr> {
     }
 
     let def_act = quote_expr!(&*cx, Box::new(|lexer:&mut $ident<R>| -> Option<$tokens> {
-        // default action is printing on stdout
+        // default action is printing on stderr
         lexer._input.pos = lexer._input.tok;
-        lexer._input.pos.off += 1;
-        let b: &u8 = lexer._input.inp[
-            lexer._input.tok.buf].get(lexer._input.tok.off);
-        if *b < 0xC2 {
-            if *b == b'\n' {
-                lexer._input.pos_location.line += 1;
-                lexer._input.pos_location.character = 1;
-            } else {
-                lexer._input.pos_location.character += 1;
-            }
+        let location = lexer._input.pos_location.clone();
 
-            lexer._input.advance_location = lexer._input.pos_location;
+        let mut c = vec![lexer._input.getchar().unwrap()];
+        let mut len = lexer._unicode_char_len(c[0].clone());
+        let saved_pos = lexer._input.pos;
+
+        while len > 1 {
+            c.push(lexer._input.getchar().unwrap());
+            len -= 1;
         }
-        error!("Encountered illegal character '{}' at {}:{}",
-            *b as char,
-            lexer._input.location.line,
-            lexer._input.location.character);
-        panic!("ERROR in rustlex. Illegal character.");
+
+        let ch = String::from_utf8(c.clone()).ok().unwrap().chars().next().unwrap();
+
+        // I HAVE NO IDEA WHY I HAVE TO DO THIS BUT MAGIC
+        lexer._input.pos = saved_pos;
+
+        if ch == '\n' {
+            lexer._input.pos_location.line += 1;
+            lexer._input.pos_location.character = 1;
+        } else {
+            lexer._input.pos_location.character += 1;
+        }
+
+        if lexer._has_callback() {
+            lexer._callback(ch, (location.line, location.character));
+        } else {
+            error!("Encountered illegal character '{}' at {}:{}",
+                ch,
+                lexer._input.location.line,
+                lexer._input.location.character);
+            panic!("ERROR in rustlex. Illegal character.");
+        }
+
+        None
     }) as Box<$action_type>);
 
     let def_pat = cx.pat_wild(sp);
@@ -264,6 +280,50 @@ fn simple_accepting_method(cx:&mut ExtCtxt, sp:Span, lex:&Lexer) -> P<ast::Item>
     ).unwrap()
 }
 
+fn user_callback_method(cx: &mut ExtCtxt, sp: Span, lex: &Lexer) -> P<ast::Item> {
+    // Generates a method that calls the callback if one was specified
+
+    let ident = lex.ident;
+
+    if let Some(ref cb) = lex.callback {
+        let closure = match cb.node {
+            ast::Expr_::ExprClosure(_, _, _) => {
+                cb.node.clone()
+            }
+            _ => {
+                panic!("Expected closure |ch: char, location: (u64, u64)| for callback.");
+            }
+        };
+
+        let expr = cx.expr(sp, closure);
+
+        quote_item!(cx,
+            impl<R: ::std::io::Read> $ident<R> {
+                fn _has_callback(&self) -> bool {
+                    true
+                }
+
+                #[allow(unused_variables)]
+                fn _callback(&self, ch: char, location: (u64, u64)) {
+                    $expr(self, ch, location);
+                }
+            }
+        ).unwrap()
+    } else {
+        quote_item!(cx,
+            impl<R: ::std::io::Read> $ident<R> {
+                fn _has_callback(&self) -> bool {
+                    false
+                }
+
+                #[allow(unused_variables)]
+                fn _callback(&self, ch: char, location: (u64, u64)) {
+                }
+            }
+        ).unwrap()
+    }
+}
+
 pub fn user_lexer_impl(cx: &mut ExtCtxt, sp: Span, lex:&Lexer) -> Vec<P<ast::Item>> {
     let actions_match = actions_match(lex, cx, sp);
     let mut fields = Vec::with_capacity(lex.properties.len() + 1);
@@ -299,7 +359,24 @@ pub fn user_lexer_impl(cx: &mut ExtCtxt, sp: Span, lex:&Lexer) -> Vec<P<ast::Ite
             pub fn new(reader:R) -> $ident<R> {
                 $init_expr
             }
-            
+
+            fn _unicode_char_len(&self, i: u8) -> u8 {
+                // check if this is a unicode combined char
+                if i < 0xC2 {
+                    // this is a single-byte char
+                    1
+                } else if i < 0xE0 {
+                    // UTF-8 2-byte pair
+                    2
+                } else if i < 0xF0 {
+                    // UTF-8 3-byte pair
+                    3
+                } else {
+                    // UTF-8 4-byte pair
+                    4
+                }
+            }
+
             #[allow(dead_code)]
             #[allow(unused_mut)]
             fn yylloc(&mut self) -> (u64, u64) {
@@ -335,6 +412,7 @@ pub fn user_lexer_impl(cx: &mut ExtCtxt, sp: Span, lex:&Lexer) -> Vec<P<ast::Ite
         }
     ).unwrap());
 
+    items.push(user_callback_method(cx, sp, lex));
     items.push(simple_follow_method(cx, sp, lex));
     items.push(simple_accepting_method(cx, sp, lex));
 
@@ -350,8 +428,8 @@ pub fn user_lexer_impl(cx: &mut ExtCtxt, sp: Span, lex:&Lexer) -> Vec<P<ast::Ite
                     self._input.tok = self._input.pos;
                     self._input.advance = self._input.pos;
 
-                    self._input.location = self._input.advance_location;
-                    self._input.pos_location = self._input.advance_location;
+                    self._input.location = self._input.pos_location;
+                    self._input.advance_location = self._input.pos_location;
 
                     let mut last_matching_action = 0;
                     let mut current_st = self._state;
@@ -368,6 +446,7 @@ pub fn user_lexer_impl(cx: &mut ExtCtxt, sp: Span, lex:&Lexer) -> Vec<P<ast::Ite
                         let mut action_id: usize = 0;
 
                         if unicode_skip == 0 {
+
                             // we can only match the first char of a unicode combined char
                             new_st = self.follow(current_st, i as usize);
                             action_id = self.accepting(new_st);
@@ -379,19 +458,7 @@ pub fn user_lexer_impl(cx: &mut ExtCtxt, sp: Span, lex:&Lexer) -> Vec<P<ast::Ite
                             } else {
                                 self._input.pos_location.character += 1;
 
-                                // check if this is a unicode combined char
-                                if i < 0xC2 {
-                                    // nothing to do, this is a single-byte char
-                                } else if i < 0xE0 {
-                                    // UTF-8 2-byte pair
-                                    unicode_skip = 1;
-                                } else if i < 0xF0 {
-                                    // UTF-8 3-byte pair
-                                    unicode_skip = 2;
-                                } else {
-                                    // UTF-8 4-byte pair
-                                    unicode_skip = 3;
-                                }
+                                unicode_skip = self._unicode_char_len(i) - 1;
                             }
                         } else {
                             unicode_skip -= 1;

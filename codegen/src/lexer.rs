@@ -35,6 +35,7 @@ pub type Prop = (Name, P<Ty>, P<Expr>);
 // all of the conditions
 pub struct LexerDef {
     pub tokens:     Ident,
+    pub callback:   Option<P<Expr>>,
     pub ident:      Ident,
     pub properties: Vec<Prop>,
     pub conditions: Vec<Condition>
@@ -53,6 +54,7 @@ pub struct LexerDef {
 //   this condition in auto.
 pub struct Lexer {
     tokens:Ident,
+    pub callback: Option<P<Expr>>,
     ident:Ident,
     auto: Box<dfa::Automaton>,
     actions: Vec<P<Expr>>,
@@ -106,6 +108,7 @@ impl Lexer {
         match dfas.minimize(acts.len(), &mut conds) {
             Ok(dfa) => Lexer {
                 tokens: def.tokens,
+                callback: def.callback.clone(),
                 ident: def.ident,
                 auto: dfa,
                 actions: acts,

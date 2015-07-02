@@ -108,6 +108,20 @@ fn get_tokens(parser: &mut Parser) -> Result<Ident,FatalError> {
     }
 }
 
+fn get_callback(parser: &mut Parser)
+        -> Result<Option<P<Expr>>, FatalError> {
+    let keyword = token::intern("callback");
+    match parser.token {
+        token::Ident(id, _) if id.name == keyword => {
+            try!(parser.bump());
+            try!(parser.expect(&token::FatArrow));
+            let expr = parser.parse_expr();
+            Ok(Some(expr))
+        }
+        _ => Ok(None)
+    }
+}
+
 fn get_properties<'a>(parser: &mut Parser)
         -> Result<Vec<(Name, P<Ty>, P<Expr>)>,FatalError> {
     let mut ret = Vec::new();
@@ -131,6 +145,8 @@ fn get_properties<'a>(parser: &mut Parser)
 
     Ok(ret)
 }
+
+
 
 // the functions below migth read their tokens either from the libsyntax
 // parser type or from our tokenizer that reads tokens from a raw string,
@@ -417,7 +433,6 @@ fn get_conditions(parser: &mut Parser, env: &Env)
                     let mut rules: Vec<Rule> = Vec::new();
 
                     // see if it is an inherited condition
-                    // eats the brace otherwise
                     if try!(parser.eat(&token::Colon)) {
                         // this condition is inherited
                         if let token::Ident(inherit_id, _) = try!(parser.bump_and_get()) {
@@ -432,7 +447,7 @@ fn get_conditions(parser: &mut Parser, env: &Env)
                         }
                     }
 
-                    // eat the brace
+                    // bump the brace
                     try!(parser.bump());
 
                     // parse the condition body
@@ -479,9 +494,10 @@ fn get_conditions(parser: &mut Parser, env: &Env)
 pub fn parse(ident:Ident, parser: &mut Parser) ->
         Result<LexerDef,FatalError> {
     let tokens = try!(get_tokens(parser));
+    let callback = try!(get_callback(parser));
     let props = try!(get_properties(parser));
     let defs = try!(get_definitions(parser));
     let conditions = try!(get_conditions(parser, &*defs));
-    Ok(LexerDef { ident:ident, tokens:tokens, properties: props,
+    Ok(LexerDef { ident:ident, tokens:tokens, callback: callback, properties: props,
                   conditions: conditions })
 }
